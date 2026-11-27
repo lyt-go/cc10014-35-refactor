@@ -162,6 +162,11 @@ def get_dependent_status(module: str, entry_id: int) -> dict[str, Any]:
             if sched.get("计划工序", "") == process:
                 result["downstream"].append({"module": "construction_schedule", "id": sched.get("id"),
                     "name": sched.get("计划工序"), "status": sched.get("status")})
+        # 下游：签认结果同步到费用调整台账，财务按原资源入口核对可冲减金额
+        for adj in store.rows("fee_adjustment"):
+            if adj.get("来源签证ID") == entry_id:
+                result["downstream"].append({"module": "fee_adjustment", "id": adj.get("id"),
+                    "name": adj.get("来源签证"), "status": adj.get("status")})
     elif module == "acceptance_record":
         process = entry.get("验收工序", "")
         for qi in store.rows("quality_inspect"):
@@ -215,7 +220,8 @@ def dependency_graph() -> dict[str, Any]:
         {"from": "acceptance_record", "to": "work_sequence", "label": "验收签署完成工序"},
         {"from": "acceptance_record", "to": "archive_mgmt", "label": "验收签署触发归档"},
         {"from": "change_order", "to": "construction_schedule", "label": "变更签认影响排期"},
-        {"from": "change_order", "to": "funding_use", "label": "变更费用追加支出"},
+        {"from": "change_order", "to": "fee_adjustment", "label": "签认结果同步费用调整台账"},
+        {"from": "fee_adjustment", "to": "funding_use", "label": "台账可冲减金额供财务核对"},
         {"from": "construction_schedule", "to": "completion_summary", "label": "全部排期完成==竣工"},
         {"from": "material_verify", "to": "work_sequence", "label": "材料签认解锁工序"},
         {"from": "restoration_log", "to": "work_sequence", "label": "全部日志归档==完成"},

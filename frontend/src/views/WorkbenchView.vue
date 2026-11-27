@@ -6,7 +6,7 @@
         <p class="page-desc">{{ meta.desc }}</p>
       </div>
       <div class="page-actions">
-        <button class="btn primary" data-testid="open-create" type="button" @click="openCreate">
+        <button v-if="meta.actions.length" class="btn primary" data-testid="open-create" type="button" @click="openCreate">
           登记{{ meta.entity }}
         </button>
         <button class="btn" data-testid="export" type="button" @click="exportRows">
@@ -120,11 +120,22 @@ const showCreate = ref(false)
 const creating = ref(false)
 const createValues = ref<Record<string, string>>({})
 
-const stats = computed(() => [
-  { label: meta.metrics[0], value: total.value },
-  { label: meta.metrics[1], value: rows.value.filter((r) => r.status === meta.statuses[1]).length },
-  { label: meta.metrics[2], value: rows.value.filter((r) => r.status === meta.statuses[meta.statuses.length - 1]).length },
-])
+const stats = computed(() => {
+  const cards = [{ label: meta.metrics[0], value: total.value }]
+  if (meta.statuses.length === 2) {
+    // 只读/双状态模块（如费用调整台账）：两张卡分别对齐两个状态
+    cards.push(
+      { label: meta.metrics[1], value: rows.value.filter((r) => r.status === meta.statuses[0]).length },
+      { label: meta.metrics[2], value: rows.value.filter((r) => r.status === meta.statuses[1]).length },
+    )
+  } else {
+    cards.push(
+      { label: meta.metrics[1], value: rows.value.filter((r) => r.status === meta.statuses[1]).length },
+      { label: meta.metrics[2], value: rows.value.filter((r) => r.status === meta.statuses[meta.statuses.length - 1]).length },
+    )
+  }
+  return cards
+})
 
 const statusSummary = computed(() =>
   meta.statuses.map((s) => ({ status: s, count: rows.value.filter((r) => String(r.status) === s).length })),

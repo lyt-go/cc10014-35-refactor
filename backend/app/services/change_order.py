@@ -1,9 +1,21 @@
-"""变更签证领域服务：签认签证后直接更新施工排期里程碑和费用联动。"""
+"""变更签证领域服务：签认签证后直接更新施工排期里程碑，并把费用结果同步到费用调整台账。
+
+金额判定不再在本服务内单独维护，统一走 ``fee_rules``；费用增减的落点由
+「直接塞一条修缮支出行」改为「费用调整台账」，财务仍通过统一资源入口核对
+可冲减金额。零元变更不产生费用行，也不写台账。
+"""
 from __future__ import annotations
 
 from typing import Any
 
 from app.services.base import BaseModuleService
+from app.services.fee_adjustment import fee_adjustment_service
+from app.services.fee_rules import (
+    approved_total,
+    check_negative_change,
+    fee_link_lock,
+    to_float,
+)
 from app.store import store
 
 
@@ -30,19 +42,56 @@ class ChangeOrderService(BaseModuleService):
             accs = store.query_by_field("acceptance_record", "验收工序", process)
             if any(a.get("status") == "已签署" for a in accs):
                 return False, f"工序「{process}」已有签署验收，不能签认变更"
-            # 3. 费用增减不能为负且超过已核准总支出
-            fee_change_val = entry.get("费用增减", 0)
-            if fee_change_val is None:
-                fee_change_val = 0
-            fee_change = float(fee_change_val)
-            if fee_change < 0:
-                approved_total = sum(
-                    float(r.get("实际金额", 0)) for r in store.rows("funding_use")
-                    if r.get("status") == "已核准"
-                )
-                if abs(fee_change) > approved_total:
-                    return False, "费用扣减超过已核准总支出"
+            # 3. 费用增减为负时，不能超过当时参与计算的已核准款项（统一判定入口）
+            passed, reason, _evidence = check_negative_change(entry)
+            if not passed:
+                return False, reason
         return True, ""
+
+    def run_action(self, entry_id: int, action: str) -> tuple[dict[str, Any] | None, str]:
+        """签认动作与费用台账写入放进同一费用联动临界区。
+
+        这样「核准支出」与「签认变更」即使并发，也只能串行进入费用判定与
+        台账写入：回执返回前台账调整项一定已经落账，不会出现财务已确认
+        冲减却找不到调整项；同一份减项签证重试也只记一次调整。
+        """
+        if action != "签认变更":
+            return super().run_action(entry_id, action)
+
+        with fee_link_lock:
+            entry = store.find(self.MODULE, entry_id)
+            if entry is None:
+                return None, f"{self.ENTITY} {entry_id} 不存在或已归档"
+
+            # 在临界区内重新做一次金额判定，拿到当时参与计算的已核准款项快照
+            passed, reason, evidence_rows = check_negative_change(entry)
+            if not passed:
+                # 按原门槛记录拒绝，财务可在台账看到拒绝原因并等待下一次签认
+                fee_adjustment_service.record_sign_result(
+                    entry_id, entry,
+                    passed=False, reason=reason,
+                    evidence_rows=evidence_rows,
+                    approved_total_amount=approved_total(),
+                )
+                return None, reason
+
+            result_entry, message = super().run_action(entry_id, action)
+            if result_entry is None:
+                # 幂等重复等场景：若已有唯一生效调整，直接沿用，不新增费用行
+                existing = fee_adjustment_service.effective_adjustment(entry_id)
+                if existing is not None and to_float(entry.get("费用增减", 0)) != 0:
+                    return entry, message
+                return result_entry, message
+
+            # 签认成功后再登记台账；零元变更不新增费用行
+            if to_float(entry.get("费用增减", 0)) != 0:
+                fee_adjustment_service.record_sign_result(
+                    entry_id, entry,
+                    passed=True, reason="",
+                    evidence_rows=evidence_rows,
+                    approved_total_amount=approved_total(),
+                )
+            return result_entry, message
 
     def cross_module_effect(
         self, entry_id: int, action: str, entry: dict[str, Any]
@@ -57,29 +106,8 @@ class ChangeOrderService(BaseModuleService):
                     sched["abnormal"] = True
                     effects.append(dict(sched))
 
-            # 2. 如果费用有变化，创建修缮支出预警记录
-            fee_change_val = entry.get("费用增减", 0)
-            if fee_change_val is None:
-                fee_change_val = 0
-            fee_change = float(fee_change_val)
-            if fee_change != 0:
-                funding_rows = store.rows("funding_use")
-                new_funding = {
-                    "id": max((int(r.get("id", 0)) for r in funding_rows), default=0) + 1,
-                    "支出项目": f"变更签证#{entry_id}费用调整",
-                    "支出类别": "变更追加",
-                    "预算金额": fee_change,
-                    "实际金额": fee_change,
-                    "支出日期": entry.get("签认日期", ""),
-                    "经办人": entry.get("审批人", ""),
-                    "审批状态": "变更费用",
-                    "备注说明": f"由变更签证#{entry_id}自动触发",
-                    "status": "待提交",
-                    "pending": True,
-                    "abnormal": False,
-                }
-                funding_rows.append(new_funding)
-                effects.append(new_funding)
+            # 2. 费用结果统一同步到费用调整台账（见 run_action 临界区），
+            #    零元变更不新增费用行，这里不再直接生成修缮支出记录。
 
             # 3. 更新关联工序异常标记
             for ws_row in store.rows("work_sequence"):

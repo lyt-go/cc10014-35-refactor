@@ -67,6 +67,7 @@ npm run dev
 | 安全交底 | `safety_briefing` | 交底记录 | 交底工序、危险源、防护措施 |
 | 施工排期 | `construction_schedule` | 排期计划 | 计划工序、开始日期、结束日期 |
 | 变更签证 | `change_order` | 变更签证单 | 变更事项、变更原因、影响工序 |
+| 费用调整台账 | `fee_adjustment` | 费用调整 | 来源签证、调整金额、可冲减金额、证据款项 |
 | 竣工总结 | `completion_summary` | 竣工报告 | 修缮项目、开工日期、竣工日期 |
 
 ## 约定

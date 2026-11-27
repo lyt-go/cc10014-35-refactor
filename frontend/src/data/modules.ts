@@ -190,6 +190,17 @@ export const MODULES: ModuleMeta[] = [
     metrics: ["签证总数", "已签认签证", "待审批签证"],
   },
   {
+    key: "fee_adjustment",
+    name: "费用调整台账",
+    entity: "费用调整",
+    desc: "变更签证签认结果自动同步的费用调整台账，财务按可冲减金额核对；系统自动登记，不支持手工录入。",
+    fields: ["来源签证", "影响工序", "变更事项", "调整金额", "可冲减金额", "已核准合计", "处理结论", "证据款项", "签认日期", "备注说明"],
+    statuses: ["已生效", "已拒绝"],
+    actions: [],
+    actionTargets: {},
+    metrics: ["调整总数", "已生效调整", "已拒绝调整"],
+  },
+  {
     key: "completion_summary",
     name: "竣工总结",
     entity: "竣工报告",

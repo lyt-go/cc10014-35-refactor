@@ -14,6 +14,7 @@ from app.services.env_monitor import EnvMonitorService
 from app.services.restoration_log import RestorationLogService
 from app.services.acceptance_record import AcceptanceRecordService
 from app.services.funding_use import FundingUseService
+from app.services.fee_adjustment import FeeAdjustmentService
 from app.services.archive_mgmt import ArchiveMgmtService
 from app.services.expert_review import ExpertReviewService
 from app.services.safety_briefing import SafetyBriefingService
@@ -34,6 +35,7 @@ SERVICES: dict[str, BaseModuleService] = {
     "restoration_log": RestorationLogService(),
     "acceptance_record": AcceptanceRecordService(),
     "funding_use": FundingUseService(),
+    "fee_adjustment": FeeAdjustmentService(),
     "archive_mgmt": ArchiveMgmtService(),
     "expert_review": ExpertReviewService(),
     "safety_briefing": SafetyBriefingService(),
